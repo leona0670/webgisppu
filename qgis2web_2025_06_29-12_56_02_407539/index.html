@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title></title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/multi-style-layer.js"></script>
+        <script src="js/leaflet-svg-shape-markers.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="data/Kecamatan_PPU_2.js"></script>
+
+        <!-- Leaflet Plugins --> 
+        <link rel="stylesheet" href="plugins/src/Control.MiniMap.css" /> 
+        <script src="plugins/src/Control.MiniMap.js" type="text/javascript"></script> 
+
+        <!-- Zoombar --> 
+        <link rel="stylesheet" href="plugins/src/L.Control.ZoomBar.css" /> 
+        <script src="plugins/src/L.Control.ZoomBar.js" type="text/javascript"></script> 
+
+        <script src="data/ppu_3.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[-1.582923808210974,116.07422683350488],[-0.7450101613609733,117.24781070635201]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // add class to format popup if it contains media
+		function addClassToPopupIfMedia(content, popup) {
+			var tempDiv = document.createElement('div');
+			tempDiv.innerHTML = content;
+			if (tempDiv.querySelector('td img')) {
+				popup._contentNode.classList.add('media');
+					// Delay to force the redraw
+					setTimeout(function() {
+						popup.update();
+					}, 10);
+			} else {
+				popup._contentNode.classList.remove('media');
+			}
+		}
+        var zoom_bar = new L.Control.ZoomBar({position: 'topleft'}).addTo(map);
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_GoogleSattelite_0');
+        map.getPane('pane_GoogleSattelite_0').style.zIndex = 400;
+        var layer_GoogleSattelite_0 = L.tileLayer('https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSattelite_0',
+            opacity: 1.0,
+            attribution: '',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 18
+        });
+        layer_GoogleSattelite_0;
+        map.createPane('pane_OpenStreetMap_1');
+        map.getPane('pane_OpenStreetMap_1').style.zIndex = 401;
+        var layer_OpenStreetMap_1 = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OpenStreetMap_1',
+            opacity: 1.0,
+            attribution: '',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OpenStreetMap_1;
+        map.addLayer(layer_OpenStreetMap_1);
+        // Modal HTML
+        var modalHTML = `
+        <div id="ppuModal" class="ppu-modal" style="display:none;position:fixed;z-index:9999;left:0;top:0;width:100vw;height:100vh;background:rgba(0,0,0,0.4);justify-content:center;align-items:center;">
+            <div style="background:#fff;padding:24px 24px 16px 24px;border-radius:8px;max-width:400px;min-width:280px;box-shadow:0 2px 8px rgba(0,0,0,0.2);position:relative;">
+                <span id="ppuModalClose" style="position:absolute;right:12px;top:8px;cursor:pointer;font-size:20px;">&times;</span>
+                <h2 style="margin-top:0;margin-bottom:12px;">Data Kabupaten PPU</h2>
+                <div id="ppuModalContent"></div>
+                <div style="margin-top:12px;font-size:12px;color:#666;">
+                    Keterangan: Data ini menampilkan informasi wilayah Kabupaten Penajam Paser Utara (PPU).
+                </div>
+            </div>
+        </div>
+        `;
+        if (!document.getElementById('ppuModal')) {
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            document.getElementById('ppuModalClose').onclick = function() {
+                document.getElementById('ppuModal').style.display = 'none';
+            };
+            document.getElementById('ppuModal').onclick = function(e) {
+                if (e.target === this) this.style.display = 'none';
+            };
+        }
+
+        function pop_Kecamatan_PPU_2(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td class="visible-with-data" id="NAMOBJ" colspan="2"><strong>Kecamatan</strong><br />' + (feature.properties['NAMOBJ'] !== null ? autolinker.link(String(feature.properties['NAMOBJ']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="SHAPE_Area" colspan="2"><strong>Luas</strong><br />' + (feature.properties['SHAPE_Area'] !== null ? autolinker.link(String(feature.properties['SHAPE_Area']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+            layer.on('click', function(e) {
+                document.getElementById('ppuModalContent').innerHTML = content;
+                document.getElementById('ppuModal').style.display = 'flex';
+            });
+        }
+
+        function style_Kecamatan_PPU_2_0(feature) {
+            switch(String(feature.properties['NAMOBJ'])) {
+                case 'Babulu':
+                    return {
+                pane: 'pane_Kecamatan_PPU_2',
+                opacity: 1,
+                color: 'rgba(38,89,128,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(99,59,230,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Penajam':
+                    return {
+                pane: 'pane_Kecamatan_PPU_2',
+                opacity: 1,
+                color: 'rgba(38,89,128,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(113,229,90,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Sepaku':
+                    return {
+                pane: 'pane_Kecamatan_PPU_2',
+                opacity: 1,
+                color: 'rgba(38,89,128,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(54,202,207,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'Waru':
+                    return {
+                pane: 'pane_Kecamatan_PPU_2',
+                opacity: 1,
+                color: 'rgba(38,89,128,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(233,90,171,1.0)',
+                interactive: true,
+            }
+                    break;
+                default:
+                    return {
+                pane: 'pane_Kecamatan_PPU_2',
+                opacity: 1,
+                color: 'rgba(38,89,128,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(236,196,128,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_Kecamatan_PPU_2');
+        map.getPane('pane_Kecamatan_PPU_2').style.zIndex = 402;
+        map.getPane('pane_Kecamatan_PPU_2').style['mix-blend-mode'] = 'normal';
+        var layer_Kecamatan_PPU_2 = new L.geoJson(json_Kecamatan_PPU_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Kecamatan_PPU_2',
+            layerName: 'layer_Kecamatan_PPU_2',
+            pane: 'pane_Kecamatan_PPU_2',
+            onEachFeature: pop_Kecamatan_PPU_2,
+            style: style_Kecamatan_PPU_2_0,
+        });
+        bounds_group.addLayer(layer_Kecamatan_PPU_2);
+        map.addLayer(layer_Kecamatan_PPU_2);
+        function pop_ppu_3(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['id'] !== null ? autolinker.link(String(feature.properties['id']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['pemilik'] !== null ? autolinker.link(String(feature.properties['pemilik']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_ppu_3_0(feature) {
+            switch(String(feature.properties['pemilik'])) {
+                default:
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(233,155,140,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'dwi':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(166,116,232,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'indah':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(234,119,31,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'lela':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(130,62,79,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'lia':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(81,72,136,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'nabila':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 13.2,
+                opacity: 1,
+                color: 'rgba(184,8,8,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(165,80,105,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        function style_ppu_3_1(feature) {
+            switch(String(feature.properties['pemilik'])) {
+                default:
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(233,155,140,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'dwi':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(166,116,232,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'indah':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(234,119,31,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'lela':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(130,62,79,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'lia':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(81,72,136,1.0)',
+                interactive: true,
+            }
+                    break;
+                case 'nabila':
+                    return {
+                pane: 'pane_ppu_3',
+                radius: 14.4,
+                opacity: 1,
+                color: 'rgba(255,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(165,80,105,1.0)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_ppu_3');
+        map.getPane('pane_ppu_3').style.zIndex = 403;
+        map.getPane('pane_ppu_3').style['mix-blend-mode'] = 'normal';
+        var layer_ppu_3 = new L.geoJson.multiStyle(json_ppu_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_ppu_3',
+            layerName: 'layer_ppu_3',
+            pane: 'pane_ppu_3',
+            onEachFeature: pop_ppu_3,
+            pointToLayers: [function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_ppu_3_0(feature));
+            },function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_ppu_3_1(feature));
+            },
+        ]});
+        bounds_group.addLayer(layer_ppu_3);
+        map.addLayer(layer_ppu_3);
+        var overlaysTree = [
+            {label: 'ppu<br /><table><tr><td style="text-align: center;"><img src="legend/ppu_3_0.png" /></td><td></td></tr><tr><td style="text-align: center;"><img src="legend/ppu_3_dwi1.png" /></td><td>dwi</td></tr><tr><td style="text-align: center;"><img src="legend/ppu_3_indah2.png" /></td><td>indah</td></tr><tr><td style="text-align: center;"><img src="legend/ppu_3_lela3.png" /></td><td>lela</td></tr><tr><td style="text-align: center;"><img src="legend/ppu_3_lia4.png" /></td><td>lia</td></tr><tr><td style="text-align: center;"><img src="legend/ppu_3_nabila5.png" /></td><td>nabila</td></tr></table>', layer: layer_ppu_3},
+            {label: 'Kecamatan_PPU<br /><table><tr><td style="text-align: center;"><img src="legend/Kecamatan_PPU_2_Babulu0.png" /></td><td>Babulu</td></tr><tr><td style="text-align: center;"><img src="legend/Kecamatan_PPU_2_Penajam1.png" /></td><td>Penajam</td></tr><tr><td style="text-align: center;"><img src="legend/Kecamatan_PPU_2_Sepaku2.png" /></td><td>Sepaku</td></tr><tr><td style="text-align: center;"><img src="legend/Kecamatan_PPU_2_Waru3.png" /></td><td>Waru</td></tr><tr><td style="text-align: center;"><img src="legend/Kecamatan_PPU_2_4.png" /></td><td></td></tr></table>', layer: layer_Kecamatan_PPU_2},
+            {label: "OpenStreetMap", layer: layer_OpenStreetMap_1},
+            {label: "Google Sattelite", layer: layer_GoogleSattelite_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        setBounds();
+        var i = 0;
+        layer_Kecamatan_PPU_2.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['NAMOBJ'] !== null?String('<div style="color: #323232; font-size: 10pt; font-family: \'Open Sans\', sans-serif;">' + layer.feature.properties['NAMOBJ']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_Kecamatan_PPU_2'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        resetLabels([layer_Kecamatan_PPU_2]);
+        map.on("zoomend", function(){
+            resetLabels([layer_Kecamatan_PPU_2]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_Kecamatan_PPU_2]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_Kecamatan_PPU_2]);
+        });
+
+        var osmForMinimap = new L.TileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {minZoom: 
+        0, maxZoom: 13, attribution: 'OpenStreetMap'}); 
+        var miniMap = new L.Control.MiniMap(osmForMinimap, { 
+        toggleDisplay: true, // Bisa disembunyikan/ditampilkan 
+        position: 'bottomleft' // Posisi di peta 
+        }).addTo(map); 
+
+              L.control.scale({ 
+        imperial: false, // Nonaktifkan satuan Imperial (kaki/mil) 
+        metric: true,    // Aktifkan satuan Metrik (meter/kilometer) 
+        position: 'bottomright' // Posisi skala 
+        }).addTo(map);
+        </script>
+
+
+
+    </body>
+</html>
